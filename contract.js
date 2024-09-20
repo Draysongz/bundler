@@ -1,29 +1,67 @@
 const { ethers } = require("ethers");
-const contractABI = require("./contractABI");
+const bundlerABI = require("./ABIs/Bundler.json");
 const dotenv = require("dotenv").config();
 const TokenABI = require("./ABIs/Token.json");
-const providerUrl = "https://asp-ample-marginally.ngrok-free.app/";
+const {
+  createNewBundler,
+  getDeployedBundler,
+} = require("./bundler/bundlerFactory");
+const bundlerFactoryABI = require("./ABIs/BundlerFactory.json");
 
+const bundlerFactoryAddress = "0x3576293Ba6Adacba1A81397db889558Dd91A8519";
+const coAdmin = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+
+const providerUrl = "http://127.0.0.1:8545/";
 const provider = new ethers.providers.JsonRpcProvider(providerUrl);
 
-const contractAddress = "0x43c5DF0c482c88Cef8005389F64c362eE720A5bC";
-const contract = new ethers.Contract(contractAddress, contractABI, provider);
 const privateKey = process.env.PRIVATE_KEY;
-
 const signer = new ethers.Wallet(privateKey, provider);
-const contractWithSigner = contract.connect(signer);
 
-async function getAdminAddress() {
+async function deployBundler() {
   try {
-    const adminAddress = await contract.adminAddress();
-    console.log("Admin Address:", adminAddress);
+    const newBundlerAddress = await createNewBundler(
+      signer,
+      bundlerFactoryABI,
+      bundlerFactoryAddress,
+      signer.address,
+      coAdmin
+    );
+
+    return newBundlerAddress;
   } catch (error) {
-    console.error("Error fetching admin address:", error);
+    console.log("error from deployBundler()", error);
   }
 }
 
-getAdminAddress();
- 
+async function bundler(bundlerAddress) {
+  try {
+    const bundler = await getDeployedBundler(
+      signer,
+      bundlerFactoryABI,
+      bundlerFactoryAddress,
+      bundlerAddress
+    );
+
+    const bundlerContract = new ethers.Contract(bundler, bundlerABI, signer);
+
+    return bundlerContract;
+  } catch (err) {
+    console.log("err from bundler()", err);
+  }
+}
+
+// async function getAdminAddress(bundlerAddress) {
+//   try {
+//     const bundlerContract = await bundler(bundlerAddress);
+//     const adminAddress = await bundlerContract.adminAddress();
+//     console.log("Admin Address:", adminAddress);
+//   } catch (error) {
+//     console.error("Error fetching admin address:", error);
+//   }
+// }
+
+// getAdminAddress();
+
 async function deployToken(
   tokenName,
   tokenSymbol,
@@ -32,7 +70,10 @@ async function deployToken(
   taxWallet
 ) {
   try {
-    const tx = await contractWithSigner.createNewToken(
+    // on new token, deploy new bundler
+    const newBundlerAddress = await deployBundler();
+    const bundlerContract = await bundler(newBundlerAddress);
+    const tx = await bundlerContract.createNewToken(
       taxWallet,
       tokenName,
       tokenSymbol,
@@ -52,7 +93,7 @@ async function deployToken(
         hash: tx.hash,
       });
       console.log("---------------------------------------");
-      return contractAddress; // Return the contract address
+      return { contractAddress, newBundlerAddress }; // Return the contract address
     } else {
       console.log("Contract deployment failed.");
       return null;
@@ -62,13 +103,19 @@ async function deployToken(
   }
 }
 
-async function getDeployedTokens() {
-  const tokens = await contract.getTokens();
-  console.log("deployed tokens", tokens);
-  return tokens;
+async function getDeployedTokens(bundlerAddress) {
+  try {
+    const bundlerContract = await bundler(bundlerAddress);
+    const tokens = await bundlerContract.getTokens();
+    console.log("deployed tokens", tokens);
+    return tokens;
+  } catch (error) {
+    console.log(error);
+  }
 }
 
 async function enableTradingAddLpPeformSwap(
+  bundlerAddress,
   tokenAddress,
   buyTax,
   sellTax,
@@ -81,6 +128,7 @@ async function enableTradingAddLpPeformSwap(
   listOfSwapTransactions // list of objects according to SwapTransaction struct
 ) {
   try {
+    const bundlerContract = await bundler(bundlerAddress);
     const taxes = [buyTax, sellTax];
     let totalValue = getTotalEthForTxs(listOfSwapTransactions);
 
@@ -90,7 +138,7 @@ async function enableTradingAddLpPeformSwap(
       )
     );
     const estimateGas =
-      await contractWithSigner.estimateGas.enableTradingWithLqToUniswap(
+      await bundlerContract.estimateGas.enableTradingWithLqToUniswap(
         tokenAddress,
         taxes,
         ethToAddToLP,
@@ -102,7 +150,7 @@ async function enableTradingAddLpPeformSwap(
         listOfSwapTransactions,
         { value: fee }
       );
-    const tx = await contractWithSigner.enableTradingWithLqToUniswap(
+    const tx = await bundlerContract.enableTradingWithLqToUniswap(
       tokenAddress,
       taxes,
       ethToAddToLP,
@@ -129,26 +177,25 @@ async function enableTradingAddLpPeformSwap(
 }
 
 async function sellTokensInAddress(
+  bundlerAddress,
   tokenAddress,
   addressHoldingTokens,
   percentToSell,
-  sendEthTo,
-  amountOutMin,
-  deadline
+  sendEthTo
 ) {
-  const ethBalBefore = await provider.getBalance(signer.address);
   try {
-    const sellTokenstx = await contractWithSigner.sellPerAddress(
+    const bundlerContract = await bundler(bundlerAddress);
+    const ethBalBefore = await provider.getBalance(signer.address);
+    const sellTokenstx = await bundlerContract.sellPerAddress(
       tokenAddress,
       addressHoldingTokens,
       percentToSell,
-      sendEthTo,
-      amountOutMin,
-      deadline
+      sendEthTo
     );
+    await sellTokenstx.wait();
     const ethBalAfter = await provider.getBalance(signer.address);
     if (Number(ethBalAfter) > Number(ethBalBefore)) {
-      console.log(`sold from ${sendEthTo} successfully`, {
+      console.log(`sold from ${addressHoldingTokens} successfully`, {
         balBefore: ethers.utils.formatEther(ethBalBefore),
         balAfter: ethers.utils.formatEther(ethBalAfter),
       });
@@ -161,15 +208,17 @@ async function sellTokensInAddress(
   }
 }
 
-async function bundleBuy(tokenAddress, listOfSwapTransactions) {
+async function bundleBuy(bundlerAddress, tokenAddress, listOfSwapTransactions) {
   try {
+    const bundlerContract = await bundler(bundlerAddress);
+
     const totalValue = getTotalEthForTxs(listOfSwapTransactions);
-    const estimateGas = await contractWithSigner.estimateGas.bundleBuys(
+    const estimateGas = await bundlerContract.estimateGas.bundleBuys(
       tokenAddress,
       listOfSwapTransactions,
       { value: totalValue }
     );
-    const bundleBuyTx = await contractWithSigner.bundleBuys(
+    const bundleBuyTx = await bundlerContract.bundleBuys(
       tokenAddress,
       listOfSwapTransactions,
       { value: totalValue }
@@ -186,9 +235,15 @@ async function bundleBuy(tokenAddress, listOfSwapTransactions) {
   }
 }
 
-async function bundleSell(tokenAddress, sendEthTo, percentToSell) {
+async function bundleSell(
+  bundlerAddress,
+  tokenAddress,
+  sendEthTo,
+  percentToSell
+) {
   try {
-    const bundleSellsTx = await contractWithSigner.bundleSells(
+    const bundlerContract = await bundler(bundlerAddress);
+    const bundleSellsTx = await bundlerContract.bundleSells(
       tokenAddress,
       sendEthTo,
       percentToSell
@@ -200,7 +255,14 @@ async function bundleSell(tokenAddress, sendEthTo, percentToSell) {
   }
 }
 
-async function updateTaxes(tokenAddress, newBuyTax, newSellTax) {
+async function updateTaxes(
+  bundlerAddress,
+  tokenAddress,
+  newBuyTax,
+  newSellTax
+) {
+  const bundlerContract = await bundler(bundlerAddress);
+
   const funcFrag = ["function updateTaxes(uint256 _buyTax, uint256 _sellTax)"];
   const interface = new ethers.utils.Interface(funcFrag);
   const funcSig = interface.encodeFunctionData("updateTaxes", [
@@ -217,10 +279,10 @@ async function updateTaxes(tokenAddress, newBuyTax, newSellTax) {
   ];
   try {
     console.log(`functionSignature: ${funcSig}`);
-    const tx = await contractWithSigner.sendTransactions(transactions);
+    const tx = await bundlerContract.sendTransactions(transactions);
 
     console.log(`successfully updated taxed: `, { hash: tx.hash });
-    return tx.hash
+    return tx.hash;
   } catch (error) {
     console.log("Error from updateTaxes()", error);
   }
@@ -250,7 +312,6 @@ function getTotalEthForTxs(listOfSwapTransactions) {
   return ethers.utils.parseEther(ethers.utils.formatEther(String(totalValue)));
 }
 
-
 // console.log(privateKey);
 // await deployToken(
 //   "TestToken",
@@ -260,13 +321,15 @@ function getTotalEthForTxs(listOfSwapTransactions) {
 //   "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
 // );
 async function ExamplePerimeterForTx() {
-  await deployToken(
+  const resp = await deployToken(
     "TestToken",
     "TST",
     10000000,
     18,
     "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
   );
+  const bundlerAddress = resp.newBundlerAddress;
+  const bundlerContract = await bundler(bundlerAddress);
   const swapTransactions = [
     {
       to: "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
@@ -288,7 +351,7 @@ async function ExamplePerimeterForTx() {
     },
   ];
 
-  const tokens = await getDeployedTokens();
+  const tokens = await getDeployedTokens(bundlerAddress);
   const tokenAddress = tokens[tokens.length - 1];
   console.log("tokenAddress", tokenAddress);
   const buyTax = 5;
@@ -300,12 +363,13 @@ async function ExamplePerimeterForTx() {
   const tradingEnabled = await token.tradingEnabled();
   const bal = await token.balanceOf(signer.address);
   console.log("Token balance of owner", ethers.utils.formatEther(bal));
-  const holdersList = await contractWithSigner.getListOfHolders(tokenAddress);
+  const holdersList = await bundlerContract.getListOfHolders(tokenAddress);
   console.log({ holdersList, tradingEnabled });
 
   if (!tradingEnabled) {
     // add lp, enable trading and buy tokens
     await enableTradingAddLpPeformSwap(
+      bundlerAddress,
       tokenAddress,
       buyTax,
       sellTax,
@@ -320,22 +384,20 @@ async function ExamplePerimeterForTx() {
   }
 
   // buy more tokens
-  await bundleBuy(tokenAddress, swapTransactions);
+  await bundleBuy(bundlerAddress, tokenAddress, swapTransactions);
 
-  const holdersAfterBuys = await contractWithSigner.getListOfHolders(
-    tokenAddress
-  );
+  const holdersAfterBuys = await bundlerContract.getListOfHolders(tokenAddress);
   const tradingEnabledAfterEnabling = await token.tradingEnabled();
   console.log({ holdersAfterBuys, tradingEnabledAfterEnabling });
 
   // sell tokens in an address
   const ethBalBefore = await provider.getBalance(signer.address);
   await sellTokensInAddress(
+    bundlerAddress,
     tokenAddress,
     swapTransactions[0].to,
-    signer.address,
-    0,
-    Math.floor(Date.now() / 1000)
+    300,
+    signer.address
   );
   const ethBalAfter = await provider.getBalance(signer.address);
   if (Number(ethBalAfter) > Number(ethBalBefore)) {
@@ -346,16 +408,14 @@ async function ExamplePerimeterForTx() {
   }
 
   // sell tokens in all addresses
-  await bundleSell(tokenAddress, signer.address);
+  await bundleSell(bundlerAddress, tokenAddress, signer.address, 1000);
   const ethBalNow = await provider.getBalance(signer.address);
   if (Number(ethBalNow) > Number(ethBalAfter)) {
     console.log("sold tokens in all addresses succesfully", {
       balNow: ethers.utils.formatEther(ethBalNow),
     });
   }
-  const holdersListNow = await contractWithSigner.getListOfHolders(
-    tokenAddress
-  );
+  const holdersListNow = await bundlerContract.getListOfHolders(tokenAddress);
   console.log({ holdersListNow });
 
   console.log("-----------------------------------");
@@ -370,7 +430,7 @@ async function ExamplePerimeterForTx() {
   //update taxes
   const newBuyTax = 10;
   const newSellTax = 15;
-  await updateTaxes(tokenAddress, newBuyTax, newSellTax);
+  await updateTaxes(bundlerAddress, tokenAddress, newBuyTax, newSellTax);
   const newBuyT = await token.buyTax();
   const newSellT = await token.sellTax();
   console.log(`updated taxes: `, {
@@ -408,7 +468,6 @@ const getTokenBalance = async (tokenAddress, walletAddress) => {
   return Number(formattedBalance).toFixed(1);
 };
 
-
 const renounce = async (tokenAddress) => {
   try {
     // Create the contract instance with token address, ABI, and signer
@@ -431,7 +490,6 @@ const renounce = async (tokenAddress) => {
   }
 };
 
-
 // ExamplePerimeterForTx();
 module.exports = {
   deployToken,
@@ -445,5 +503,5 @@ module.exports = {
   getSellTax,
   getTokenBalance,
   withdrawTax,
-  renounce
+  renounce,
 };
