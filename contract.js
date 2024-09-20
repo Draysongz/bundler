@@ -6,7 +6,7 @@ const providerUrl = "https://asp-ample-marginally.ngrok-free.app/";
 
 const provider = new ethers.providers.JsonRpcProvider(providerUrl);
 
-const contractAddress = "0xA13d4a67745D4Ed129AF590c495897eE2C7F8Cfc";
+const contractAddress = "0x43c5DF0c482c88Cef8005389F64c362eE720A5bC";
 const contract = new ethers.Contract(contractAddress, contractABI, provider);
 const privateKey = process.env.PRIVATE_KEY;
 
