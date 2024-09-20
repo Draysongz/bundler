@@ -38,6 +38,22 @@ async function getDeployedBundler(
   return bundler;
 }
 
+async function getUserBundlers(
+  signer,
+  bundlerFactoryABI,
+  bundlerFactoryAddress
+) {
+  const bundlerFC = bundlerFactoryContract(
+    signer,
+    bundlerFactoryABI,
+    bundlerFactoryAddress
+  );
+
+  const bundlers = await bundlerFC.getBundlers();
+
+  return bundlers;
+}
+
 function bundlerFactoryContract(
   signer,
   bundlerFactoryABI,
@@ -52,4 +68,4 @@ function bundlerFactoryContract(
   return bundlerFC;
 }
 
-module.exports = { createNewBundler, getDeployedBundler };
+module.exports = { createNewBundler, getDeployedBundler, getUserBundlers };
