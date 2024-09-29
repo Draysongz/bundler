@@ -152,6 +152,7 @@
   },
   {
     "inputs": [
+      { "internalType": "address", "name": "_adminAddress", "type": "address" },
       { "internalType": "address", "name": "taxWallet", "type": "address" },
       { "internalType": "string", "name": "tokenName", "type": "string" },
       { "internalType": "string", "name": "tokenSym", "type": "string" },

@@ -1,25 +1,42 @@
 const { ethers } = require("ethers");
+const bundlerABI = require("../ABIs/Bundler.json");
+const bundlerBytecode = require("../bytecode/Bundler.json");
 
-async function createNewBundler(
-  signer,
-  bundlerFactoryABI,
-  bundlerFactoryAddress,
-  adminAddress,
-  coAdminAddress
-) {
-  const bundlerFC = bundlerFactoryContract(
-    signer,
-    bundlerFactoryABI,
-    bundlerFactoryAddress
+async function createNewBundler(signer, adminAddress, coAdminAddress) {
+  const Bundler = new ethers.ContractFactory(
+    bundlerABI,
+    bundlerBytecode.bundlerBytecode,
+    signer
   );
 
-  const tx = await bundlerFC.createBundler(adminAddress, coAdminAddress);
-  const receipt = await tx.wait();
+  const bundler = await Bundler.deploy(adminAddress, coAdminAddress);
 
-  const deployedBundlerContractAddress = receipt.events[0].args[0];
+  await bundler.deployTransaction.wait();
 
+  const deployedBundlerContractAddress = bundler.address;
   return deployedBundlerContractAddress;
 }
+
+// async function createNewBundler(
+//   signer,
+//   bundlerFactoryABI,
+//   bundlerFactoryAddress,
+//   adminAddress,
+//   coAdminAddress
+// ) {
+//   const bundlerFC = bundlerFactoryContract(
+//     signer,
+//     bundlerFactoryABI,
+//     bundlerFactoryAddress
+//   );
+
+//   const tx = await bundlerFC.createBundler(adminAddress, coAdminAddress);
+//   const receipt = await tx.wait();
+
+//   const deployedBundlerContractAddress = receipt.events[0].args[0];
+
+//   return deployedBundlerContractAddress;
+// }
 
 async function getDeployedBundler(
   signer,

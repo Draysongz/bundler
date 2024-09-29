@@ -1,14 +1,9 @@
 const { ethers } = require("ethers");
 const bundlerABI = require("./ABIs/Bundler.json");
-const dotenv = require("dotenv").config();
+require("dotenv").config();
 const TokenABI = require("./ABIs/Token.json");
-const {
-  createNewBundler,
-  getDeployedBundler,
-} = require("./bundler/bundlerFactory");
-const bundlerFactoryABI = require("./ABIs/BundlerFactory.json");
+const { createNewBundler } = require("./bundler/bundlerFactory");
 
-const bundlerFactoryAddress = "0x3576293Ba6Adacba1A81397db889558Dd91A8519";
 const coAdmin = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 
 const providerUrl = "http://127.0.0.1:8545/";
@@ -21,11 +16,11 @@ async function deployBundler() {
   try {
     const newBundlerAddress = await createNewBundler(
       signer,
-      bundlerFactoryABI,
-      bundlerFactoryAddress,
       signer.address,
       coAdmin
     );
+
+    // save to DB
 
     return newBundlerAddress;
   } catch (error) {
@@ -35,14 +30,11 @@ async function deployBundler() {
 
 async function bundler(bundlerAddress) {
   try {
-    const bundler = await getDeployedBundler(
-      signer,
-      bundlerFactoryABI,
-      bundlerFactoryAddress,
-      bundlerAddress
+    const bundlerContract = new ethers.Contract(
+      bundlerAddress,
+      bundlerABI,
+      signer
     );
-
-    const bundlerContract = new ethers.Contract(bundler, bundlerABI, signer);
 
     return bundlerContract;
   } catch (err) {
@@ -74,6 +66,7 @@ async function deployToken(
     const newBundlerAddress = await deployBundler();
     const bundlerContract = await bundler(newBundlerAddress);
     const tx = await bundlerContract.createNewToken(
+      signer.address,
       taxWallet,
       tokenName,
       tokenSymbol,
