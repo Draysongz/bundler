@@ -13,8 +13,13 @@ async function createNewBundler(
     bundlerFactoryAddress
   );
 
-  const tx = await bundlerFC.createBundler(adminAddress, coAdminAddress);
+  // const estimatedGas = await bundlerFC.estimateGas.createBundler(adminAddress, coAdminAddress)
+  //  console.log("Estimated gas for bundler creation:", estimatedGas.toString());
+  const tx = await bundlerFC.createBundler(adminAddress, coAdminAddress, );
+
   const receipt = await tx.wait();
+  console.log("receipt",receipt)
+  console.log(receipt.events[0].args[0])
 
   const deployedBundlerContractAddress = receipt.events[0].args[0];
 

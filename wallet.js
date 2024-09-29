@@ -5,8 +5,8 @@ const BundleWallet = require('./BundleWallet')
 
 
 
-
-const web3 = new Web3(Web3.givenProvider || "ws://localhost:8545")
+const alchemyEndpointKey = process.env.ALCHEMY_ENDPOINT_KEY || "";
+const web3 = new Web3(Web3.givenProvider || `https://eth-mainnet.g.alchemy.com/v2/${alchemyEndpointKey}`)
 
 
 const generateWallet = async ()=>{
@@ -68,12 +68,13 @@ const createBundledWallet = async (numOfWallets)=>{
 
 
 
-const saveWalletToDB = async (walletAddress, privateKey, name) => {
+const saveWalletToDB = async (walletAddress, privateKey, name, userId) => {
   try {
     const wallet = new WalletModel({
       walletAddress,
       privateKey,
-      name
+      name,
+      userId
     });
 
     await wallet.save(); // Save the wallet to MongoDB
@@ -89,6 +90,24 @@ const saveWalletToDB = async (walletAddress, privateKey, name) => {
 const fetchWalletFromDB = async (walletAddress) => {
   try {
     const wallet = await WalletModel.findOne({ walletAddress }).exec();
+
+    if (!wallet) {
+      console.log('Wallet not found');
+      return null;
+    }
+
+    console.log('Wallet fetched successfully:', wallet);
+    return wallet;
+  } catch (error) {
+    console.error('Error fetching wallet from DB:', error);
+    throw error; // Propagate the error for further handling if needed
+  }
+};
+
+
+const fetchUserWallet = async (userId) => {
+  try {
+    const wallet = await WalletModel.find({ userId }).exec();
 
     if (!wallet) {
       console.log('Wallet not found');
@@ -127,5 +146,6 @@ module.exports= {
     saveWalletToDB,
     fetchWalletFromDB,
     fetchAllWalletsFromDB,
-    createBundledWallet
+    createBundledWallet,
+    fetchUserWallet
 }

@@ -12,6 +12,10 @@ const bundleWalletSchema =  new mongoose.Schema({
 })
 
 const tokenSchema = new mongoose.Schema({
+  userId: {
+    type: String,
+    required: true
+  },
   name: {
     type: String,
     required: true,
@@ -39,6 +43,14 @@ const tokenSchema = new mongoose.Schema({
     default: []
   },
   taxWallet: {
+    type: String,
+    required: true
+  },
+  bundlerAddress: {
+    type: String,
+    required: true
+  },
+  adminKey: {
     type: String,
     required: true
   }

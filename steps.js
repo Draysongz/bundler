@@ -1,3 +1,5 @@
+const { fetchUserWallet } = require("./wallet");
+
 const isValidEthereumAddress = (address) => {
   // Basic check for valid Ethereum address (length and starts with "0x")
   return /^0x[a-fA-F0-9]{40}$/.test(address);
@@ -96,29 +98,59 @@ const handleDeploySteps10 = async (ctx) => {
       ctx.session.stepCount = 11;
 };
 
-const handleDeploySteps11= async(ctx)=>{
-    ctx.session.randomWallets = ctx.message.text
-    console.log(ctx.session.randomWallets.toLowerCase())
-    console.log(ctx.session.randomWallets)
+const handleDeploySteps11 = async (ctx) => {
+  ctx.session.randomWallets = ctx.message.text.toLowerCase();
+  console.log("User input:", ctx.session.randomWallets);
 
-   if (ctx.session.randomWallets.toLowerCase() !== "yes" && ctx.session.randomWallets.toLowerCase() !== "no") {
+  // Validate the input
+  if (ctx.session.randomWallets !== "yes" && ctx.session.randomWallets !== "no") {
     await ctx.reply("Invalid answer, please provide a valid reply (yes or no)");
-    return;
-}
+    return; // Do not advance the step
+  }
 
+  // If valid input, increment to step 12
+ const wallets = await fetchUserWallet(ctx.from.id);
+      if (wallets.length === 0) {
+        ctx.reply(
+          "You currently have no wallets created or imported. Please use the options below to either generate a new wallet or import an existing one:",
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: "Generate Wallet", callback_data: "generate_wallet" },
+                  { text: "Import Wallet", callback_data: "import_wallet" },
+                ],
+              ],
+            },
+          }
+        );
+      } else {
+        const walletList = wallets
+          .map(
+            (wallet) =>
+              `Name: ${wallet.name} \n Address: ${wallet.walletAddress}`
+          )
+          .join("\n\n");
+        ctx.reply(
+          `Here are your existing wallets \n\n ${walletList} \n\n\n 💡To deploy with existing wallets, click the button with the wallet's name.`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                ...wallets.map((wallet) => [
+                  { text: `✅ ${wallet.name}`, callback_data: wallet.name },
+                ]),
+                [
+                  { text: "Generate Wallet", callback_data: "generate_wallet" },
+                  { text: "Import wallet", callback_data: "import_wallet" },
+                ],
+                [{ text: "back", callback_data: "back_button" }],
+              ],
+            },
+          }
+        );
+      }
+};
 
-    console.log("Final Token Details:", ctx.session.tokenDetails);
-   ctx.reply(
-        `Thank you for the info. We've got all we need to deploy your token`,
-        {
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "Proceed to deploy", callback_data: "deploy_token" }],
-            ],
-          },
-        }
-      );
-}
 
 const handleSkip = async (ctx) => {
     const callbackData = ctx.callbackQuery.data;

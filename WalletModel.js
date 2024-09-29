@@ -2,6 +2,10 @@ const mongoose = require('mongoose');
 
 // Define the schema for the Wallet
 const walletSchema = new mongoose.Schema({
+  userId: {
+    type: String,
+    required: true
+  },
   walletAddress: {
     type: String,
     required: true,
@@ -12,7 +16,7 @@ const walletSchema = new mongoose.Schema({
     required: true,
   },
 
-  name: {type: String, unique: true}
+  name: {type: String}
 }, {timestamps: true});
 
 // Create the Wallet model from the schema

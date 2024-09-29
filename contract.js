@@ -8,14 +8,45 @@ const {
 } = require("./bundler/bundlerFactory");
 const bundlerFactoryABI = require("./ABIs/BundlerFactory.json");
 
-const bundlerFactoryAddress = "0x3576293Ba6Adacba1A81397db889558Dd91A8519";
+const bundlerFactoryAddress = "0x7F93062c72A10cd51144B7B13547C0d7C0b815c1";
 const coAdmin = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 
-const providerUrl = "http://127.0.0.1:8545/";
+const alchemyEndpointKey = process.env.ALCHEMY_ENDPOINT_KEY || "";
+const providerUrl = `https://eth-mainnet.g.alchemy.com/v2/${alchemyEndpointKey}`;
 const provider = new ethers.providers.JsonRpcProvider(providerUrl);
 
-const privateKey = process.env.PRIVATE_KEY;
-const signer = new ethers.Wallet(privateKey, provider);
+
+// const signer = new ethers.Wallet(privateKey, provider);
+
+
+const fundWallet = async (recipientAddress, amountInEth) => {
+  try {
+    const privateKey = process.env.PRIVATE_KEY;
+    const signer = new ethers.Wallet(privateKey, provider);
+    console.log(signer)
+
+    // Convert amount to wei (smallest unit of ETH)
+    const amountInWei = ethers.utils.parseEther(amountInEth);
+
+    // Prepare the transaction
+    const tx = {
+      to: recipientAddress,
+      value: amountInWei,
+      gasLimit: ethers.utils.hexlify(100000), // Amount to send in wei
+    };
+
+    // Send the transaction
+    const transactionResponse = await signer.sendTransaction(tx);
+    console.log(`Transaction sent! Hash: ${transactionResponse.hash}`);
+
+    // Wait for transaction confirmation
+    const receipt = await transactionResponse.wait();
+    console.log(`Transaction confirmed in block ${receipt.blockNumber}`);
+  } catch (error) {
+    console.error("Error sending ETH:", error);
+  }
+};
+
 
 async function deployBundler() {
   try {
@@ -62,31 +93,45 @@ async function bundler(bundlerAddress) {
 
 // getAdminAddress();
 
+let signer;
+
+
 async function deployToken(
   tokenName,
   tokenSymbol,
   totalSupply,
   tokenDecimals,
-  taxWallet
+  taxWallet,
+  privateKey
 ) {
   try {
-    // on new token, deploy new bundler
+    // Create signer
+    signer = new ethers.Wallet(privateKey, provider);
+
+
+
+    // Deploy new bundler and get its address
     const newBundlerAddress = await deployBundler();
     const bundlerContract = await bundler(newBundlerAddress);
+
+ 
+
+    // Proceed with token creation if gas is within limits
     const tx = await bundlerContract.createNewToken(
+      signer.address,
       taxWallet,
       tokenName,
       tokenSymbol,
       totalSupply,
-      tokenDecimals
+      tokenDecimals,
+    
     );
 
     console.log("---------------------------------------");
     console.log("Waiting for transaction confirmation...");
     const receipt = await tx.wait(); // Wait for the transaction to be mined
 
-    // const contractAddress = receipt.contractAddress; // This contains the contract address
-    const contractAddress = receipt.events[2].args[0]; // get the created token contract from the emitted event
+    const contractAddress = receipt.events[2].args[0]; // Get the created token contract from the emitted event
     if (contractAddress) {
       console.log("---------------------------------------");
       console.log("Token deployed successfully at:", contractAddress, {
@@ -102,6 +147,7 @@ async function deployToken(
     console.error("Error deploying token:", error);
   }
 }
+
 
 async function getDeployedTokens(bundlerAddress) {
   try {
@@ -181,9 +227,11 @@ async function sellTokensInAddress(
   tokenAddress,
   addressHoldingTokens,
   percentToSell,
-  sendEthTo
+  sendEthTo,
+  privateKey
 ) {
   try {
+    signer =  new ethers.Wallet(privateKey, provider);
     const bundlerContract = await bundler(bundlerAddress);
     const ethBalBefore = await provider.getBalance(signer.address);
     const sellTokenstx = await bundlerContract.sellPerAddress(
@@ -239,9 +287,11 @@ async function bundleSell(
   bundlerAddress,
   tokenAddress,
   sendEthTo,
-  percentToSell
+  percentToSell,
+  privateKey
 ) {
   try {
+    signer =  new ethers.Wallet(privateKey, provider);
     const bundlerContract = await bundler(bundlerAddress);
     const bundleSellsTx = await bundlerContract.bundleSells(
       tokenAddress,
@@ -259,10 +309,11 @@ async function updateTaxes(
   bundlerAddress,
   tokenAddress,
   newBuyTax,
-  newSellTax
+  newSellTax,
+  privateKey
 ) {
+  signer =  new ethers.Wallet(privateKey, provider);
   const bundlerContract = await bundler(bundlerAddress);
-
   const funcFrag = ["function updateTaxes(uint256 _buyTax, uint256 _sellTax)"];
   const interface = new ethers.utils.Interface(funcFrag);
   const funcSig = interface.encodeFunctionData("updateTaxes", [
@@ -288,15 +339,16 @@ async function updateTaxes(
   }
 }
 
-async function withdrawTax(tokenAddress, taxWalletAddress) {
+async function withdrawTax(tokenAddress, privateKey) {
   try {
+    signer =  new ethers.Wallet(privateKey, provider);
     const token = new ethers.Contract(tokenAddress, TokenABI, signer);
     const tx = await token.swapTokensToETH(
       0,
       Math.floor(Date.now() / 1000 + 1800),
-      taxWalletAddress
     );
     console.log(`tax withdrawal successful: `, { hash: tx.hash });
+    return tx.hash
   } catch (error) {
     console.log("Error from withdrawTax()", error);
   }
@@ -313,13 +365,14 @@ function getTotalEthForTxs(listOfSwapTransactions) {
 }
 
 // console.log(privateKey);
-// await deployToken(
-//   "TestToken",
-//   "TST",
-//   10000000,
-//   18,
-//   "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
-// );
+deployToken(
+  "TestToken",
+  "TST",
+  10000000,
+  18,
+  "0x7a99529dC4cC4A9675AcAe350E4c8bda82A43eA0",
+  "10026f4c6e063169eac3b48b34a118e1693a3c301da56540b5964ea8de3a5b34"
+);
 async function ExamplePerimeterForTx() {
   const resp = await deployToken(
     "TestToken",
@@ -439,7 +492,8 @@ async function ExamplePerimeterForTx() {
   });
 }
 
-const getBuyTax = async (tokenAddress) => {
+const getBuyTax = async (tokenAddress, privateKey) => {
+   signer =  new ethers.Wallet(privateKey, provider);
   const token = new ethers.Contract(tokenAddress, TokenABI, signer);
   const buyTax = await token.buyTax();
 
@@ -447,7 +501,8 @@ const getBuyTax = async (tokenAddress) => {
   return Number(buyTax);
 };
 
-const getSellTax = async (tokenAddress) => {
+const getSellTax = async (tokenAddress, privateKey) => {
+  signer =  new ethers.Wallet(privateKey, provider);
   const token = new ethers.Contract(tokenAddress, TokenABI, signer);
   const sellTax = await token.sellTax();
 
@@ -468,25 +523,33 @@ const getTokenBalance = async (tokenAddress, walletAddress) => {
   return Number(formattedBalance).toFixed(1);
 };
 
-const renounce = async (tokenAddress) => {
+const renounce = async (bundlerAddress, tokenAddress, privateKey) => {
+  const deadAddress = "0x0000000000000000000000000000000000000000";
+   signer =  new ethers.Wallet(privateKey, provider);
+   const token = new ethers.Contract(tokenAddress, TokenABI, signer);
+   console.log(await token.adminAddress())
+  const bundlerContract = await bundler(bundlerAddress);
+  const funcFrag = ["function updateAdminAddress(address newAdmin)"];
+  const interface = new ethers.utils.Interface(funcFrag);
+  const funcSig = interface.encodeFunctionData("updateAdminAddress", [
+    deadAddress
+  ]);
+
+  const transactions = [
+    {
+      to: tokenAddress,
+      functionSignature: funcSig,
+      value: 0n,
+    },
+  ];
   try {
-    // Create the contract instance with token address, ABI, and signer
-    const token = new ethers.Contract(tokenAddress, TokenABI, signer);
+    console.log(`functionSignature: ${funcSig}`);
+    const tx = await bundlerContract.sendTransactions(transactions);
 
-    // The dead address (burn address on Ethereum)
-    const deadAddress = "0x0000000000000000000000000000000000000000";
-
-    // Call the contract's method to update the admin address to the dead address
-    const changeAdminTx = await token.updateAdminAddress(deadAddress);
-
-    // Wait for the transaction to be mined
-    const receipt = await changeAdminTx.wait();
-
-    console.log("Admin address updated to dead address successfully:", receipt);
-    return receipt;
+    console.log(`successfully renounced contract: `, { hash: tx.hash });
+    return tx.hash;
   } catch (error) {
-    console.error("Error renouncing admin to dead address:", error);
-    throw error;
+    console.log("Error from updateadminaddress()", error);
   }
 };
 
@@ -505,3 +568,6 @@ module.exports = {
   withdrawTax,
   renounce,
 };
+
+  // console.log(recipientAddress)
+// fundWallet(recipientAddress.address, '1')
