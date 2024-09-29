@@ -23,6 +23,7 @@ const {
   saveWalletToDB,
   fetchWalletFromDB,
   createBundledWallet,
+  fetchUserWallet,
 } = require("./wallet");
 const {
   deployToken,
@@ -154,66 +155,25 @@ deployScene.on("message", async (ctx) => {
   }
 });
 
-walletScene.enter(async (ctx) => {
-  const wallets = await fetchAllWalletsFromDB();
-
-  if (wallets.length === 0) {
-    ctx.reply(
-      "You currently have no wallets created or imported. Please use the options below to either generate a new wallet or import an existing one:",
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: "Generate Wallet", callback_data: "generate_wallet" },
-              { text: "Import Wallet", callback_data: "import_wallet" },
-            ],
-          ],
-        },
-      }
-    );
-  } else {
-    const walletList = wallets
-      .map(
-        (wallet) => `Name: ${wallet.name} \n Address: ${wallet.walletAddress}`
-      )
-      .join("\n\n");
-    ctx.reply(
-      `Here are your existing wallets \n\n ${walletList} \n\n\n 💡To rename or export your wallets, click the button with the wallet's name.`,
-      {
-        reply_markup: {
-          inline_keyboard: [
-            ...wallets.map((wallet) => [
-              { text: `✅ ${wallet.name}`, callback_data: wallet.name },
-            ]),
-            [
-              { text: "Generate Wallet", callback_data: "generate_wallet" },
-              { text: "Import wallet", callback_data: "import_wallet" },
-            ],
-            [{ text: "back", callback_data: "back_button" }],
-          ],
-        },
-      }
-    );
-  }
-});
-
-walletScene.action("generate_wallet", async (ctx) => {
+deployScene.action("generate_wallet", async (ctx) => {
+  const userId = ctx.from.id;
   try {
     const { privateKey, walletAddress } = await generateWallet();
-    const wallets = await fetchAllWalletsFromDB();
+    const wallets = await fetchUserWallet(userId);
     const walletName = wallets.length + 1;
-    await saveWalletToDB(walletAddress, privateKey, `w${walletName}`);
+    await saveWalletToDB(walletAddress, privateKey, `w${walletName}`, userId);
     ctx.replyWithHTML(
       `Created new wallet\n\n
         <b>Wallet</b>\n${walletAddress}  \n\n <b>Private Key</b>\n ${privateKey} `,
       {
         reply_markup: {
           inline_keyboard: [
-            [{ text: "Delete Message", callback_data: "delete_message" }],
+            [{ text: "Proceed to deploy", callback_data: "deploy_token" }],
           ],
         },
       }
     );
+    ctx.session.tokenDetails.privateKey = privateKey;
   } catch (error) {
     console.log("error creating wallet..", error);
     ctx.reply(
@@ -274,8 +234,9 @@ AddWalletScene.on("message", async (ctx) => {
   }
 });
 tokenScene.enter(async (ctx) => {
+  const userId = ctx.from.id
   try {
-    const deployedTokens = await Token.find().exec();
+    const deployedTokens = await Token.find({userId}).exec();
 
     if (deployedTokens.length === 0) {
       // No tokens found
@@ -322,7 +283,9 @@ tokenScene.enter(async (ctx) => {
 bundleScene.enter(async (ctx) => {
   const contractAddress = ctx.scene.state.contractAddress;
   const randomWalletsOption = ctx.scene.state.randomWallets;
+  const bundlerAddress = ctx.scene.state.bundlerAddress;
   ctx.session.randomWallets = randomWalletsOption;
+  ctx.session.bundlerAddress = bundlerAddress;
   console.log(contractAddress, randomWalletsOption);
   ctx.reply("Please provide the buy tax value");
 
@@ -473,6 +436,7 @@ bundleScene.action("confirm_bundle", async (ctx) => {
   let numOfWallets;
   const walletAddresses = ctx.session.bundleDetails.walletAddresses;
   console.log(walletAddresses);
+  const bundlerAddress = ctx.session.bundlerAddress;
   if (ctx.session.randomWallets.toLowerCase() == "no" && walletAddresses) {
     numOfWallets = walletAddresses.length;
   } else {
@@ -498,7 +462,7 @@ bundleScene.action("confirm_bundle", async (ctx) => {
     return null;
   }
   const totalSupply = tokenDetails.totalSupply;
-  const bundlePercent= ctx.session.bundleDetails.bundlePercent
+  const bundlePercent = ctx.session.bundleDetails.bundlePercent;
 
   const ethNeededToPurchaseTokens = calculatePriceForBundlePercent(
     ethToAddToLP,
@@ -549,6 +513,7 @@ bundleScene.action("confirm_bundle", async (ctx) => {
     );
 
     const bundled = await enableTradingAddLpPeformSwap(
+      bundlerAddress,
       contractAddress,
       buyTax,
       sellTax,
@@ -579,7 +544,9 @@ deployScene.action("deploy_token", async (ctx) => {
   const tokenDecimals = ctx.session.tokenDetails.tokenDecimals;
   const totalSupply = ctx.session.tokenDetails.totalSupply;
   const taxWallet = ctx.session.tokenDetails.taxWallet;
+  const privateKey = ctx.session.tokenDetails.privateKey;
   console.log("deploying the token");
+  const userId = ctx.from.id;
 
   try {
     console.log("trying to deploying the token");
@@ -588,21 +555,26 @@ deployScene.action("deploy_token", async (ctx) => {
       tokenSymbol,
       totalSupply,
       tokenDecimals,
-      taxWallet
+      taxWallet,
+      privateKey
     );
     console.log(token);
     const newToken = new Token({
+      userId: userId,
       name: tokenName,
       ticker: tokenSymbol,
       totalSupply: totalSupply,
-      contractAddress: token,
+      contractAddress: token.contractAddress,
       tokenDecimal: tokenDecimals,
       taxWallet: taxWallet,
+      bundlerAddress: token.newBundlerAddress,
+      adminKey: privateKey
     });
-    ctx.session.tokenContractAddress = token;
+    ctx.session.tokenContractAddress = token.contractAddress;
+    ctx.session.bundlerAddress = token.newBundlerAddress;
     await newToken.save();
     ctx.reply(
-      `Token contract successfully deployed \n\n Contract address : ${token}`,
+      `Token contract successfully deployed \n\n Contract address : ${token.contractAddress} \n\n bundler address: ${token.newBundlerAddress}`,
       {
         reply_markup: {
           inline_keyboard: [
@@ -627,8 +599,8 @@ tokenScene.on("callback_query", async (ctx) => {
       console.log("token not found");
       return null;
     }
-    const buyTax = await getBuyTax(contractAddress);
-    const sellTax = await getSellTax(contractAddress);
+    const buyTax = await getBuyTax(contractAddress, token.adminKey);
+    const sellTax = await getSellTax(contractAddress, token.adminKey);
 
     if (token) {
       // Respond with token details
@@ -678,8 +650,8 @@ tokenScene.on("callback_query", async (ctx) => {
               ],
               [
                 {
-                    text: "Renounce contract",
-                    callback_data: `renounce|${token.contractAddress}`
+                  text: "Renounce contract",
+                  callback_data: `renounce|${token.contractAddress}`,
                 },
                 {
                   text: "Back",
@@ -708,6 +680,7 @@ deployScene.action("bundle", async (ctx) => {
   await ctx.scene.enter("bundleScene", {
     contractAddress: ctx.session.tokenContractAddress,
     randomWallets: ctx.session.randomWallets,
+    bundlerAddress: ctx.session.bundlerAddress,
   });
 });
 
@@ -721,8 +694,8 @@ simultaneousScene.enter(async (ctx) => {
     return null;
   }
 
-  const buyTax = await getBuyTax(contractAddress);
-  const sellTax = await getSellTax(contractAddress);
+  const buyTax = await getBuyTax(contractAddress, token.adminKey);
+  const sellTax = await getSellTax(contractAddress, token.adminKey);
   // Respond with token details
   ctx.replyWithHTML(
     `
@@ -796,6 +769,7 @@ simultaneousScene.on("message", async (ctx) => {
   let simultaneousStep = ctx.session.simultaneousStep || 1;
   const contractAddress = ctx.session.contractAddress;
   let percentSell = ctx.session.percentSell;
+  const token = await Token.findOne({contractAddress}).exec()
 
   if (
     percentSell == 25 ||
@@ -809,63 +783,71 @@ simultaneousScene.on("message", async (ctx) => {
     );
     try {
       percentSell = percentSell * 10;
-      const simHash = await bundleSell(contractAddress, sendEthTo, percentSell);
+      const simHash = await bundleSell(token.bundlerAddress,contractAddress, sendEthTo, percentSell, token.adminKey);
       console.log(simHash);
       ctx.reply(`Sell transaction successful. Transaction Hash: ${simHash}`);
+      await ctx.scene.leave()
+      showStartMenu(ctx)
     } catch (error) {
       console.log(error);
       ctx.reply("Error selling tokens, please try again");
     }
-  } else{
-   switch (simultaneousStep) {
-    case 1:
-      // Step 1: Capture percentage of tokens to sell
-      ctx.session.percentSell = ctx.message.text;
-      ctx.reply(
-        "Please provide the wallet where ETH obtained after sale will be sent."
-      );
-      ctx.session.simultaneousStep = 2; // Move to the next step
-      break;
-
+  } else {
+    switch (simultaneousStep) {
+      case 1:
+        // Step 1: Capture percentage of tokens to sell
+        ctx.session.percentSell = ctx.message.text;
+        ctx.reply(
+          "Please provide the wallet where ETH obtained after sale will be sent."
+        );
+        ctx.session.simultaneousStep = 2; // Move to the next step
+        break;
 
       case 2:
-      const sendEthTo = ctx.message.text;
+        const sendEthTo = ctx.message.text;
 
-      // Ensure the percentSell is within a valid range (0 - 100)
-      let percentSell = parseFloat(ctx.session.percentSell);
+        // Ensure the percentSell is within a valid range (0 - 100)
+        let percentSell = parseFloat(ctx.session.percentSell);
 
-      // Log the percentage to sell
-      ctx.reply(
-        `Attempting to sell ${percentSell}% of tokens in all bundled wallets.`
-      );
-
-      // Attempt the sale using `bundleSell`
-      try {
-        // Adjust the percentage if needed (e.g., convert to a scale of 1000 or another multiplier)
-        const adjustedPercentSell = percentSell * 10; // You can adjust this based on your requirements
-        const simHash = await bundleSell(contractAddress, sendEthTo, adjustedPercentSell);
-        
-        // Confirm the successful transaction
-        console.log("Simultaneous Sell Transaction Hash:", simHash);
+        // Log the percentage to sell
         ctx.reply(
-          `Sell transaction successful. Transaction Hash: <code>${simHash}</code>`,
-          { parse_mode: "HTML" }
+          `Attempting to sell ${percentSell}% of tokens in all bundled wallets.`
         );
-      } catch (error) {
-        // Handle any errors in the selling process
-        console.error("Error during simultaneous sell:", error);
-        ctx.reply("❌ Error selling tokens. Please try again.");
-      }
-      break;
+
+        // Attempt the sale using `bundleSell`
+        try {
+          // Adjust the percentage if needed (e.g., convert to a scale of 1000 or another multiplier)
+          const adjustedPercentSell = percentSell * 10; // You can adjust this based on your requirements
+          const simHash = await bundleSell(
+            token.bundlerAddress,
+            contractAddress,
+            sendEthTo,
+            adjustedPercentSell,
+            token.adminKey
+          );
+
+          // Confirm the successful transaction
+          console.log("Simultaneous Sell Transaction Hash:", simHash);
+          ctx.reply(
+            `Sell transaction successful. Transaction Hash: <code>${simHash}</code>`,
+            { parse_mode: "HTML" }
+          );
+           await ctx.scene.leave()
+          showStartMenu(ctx)
+        } catch (error) {
+          // Handle any errors in the selling process
+          console.error("Error during simultaneous sell:", error);
+          ctx.reply("❌ Error selling tokens. Please try again.");
+        }
+        break;
 
       default:
-      // Handle unexpected steps
-      ctx.reply("Invalid step in the selling process.");
-      ctx.session.simultaneousStep = 1;
-      ctx.scene.leave()
-      break;
-  }
-
+        // Handle unexpected steps
+        ctx.reply("Invalid step in the selling process.");
+        ctx.session.simultaneousStep = 1;
+        ctx.scene.leave();
+        break;
+    }
   }
 });
 
@@ -879,8 +861,8 @@ holdingsScene.enter(async (ctx) => {
     return null;
   }
 
-  const buyTax = await getBuyTax(contractAddress);
-  const sellTax = await getSellTax(contractAddress);
+  const buyTax = await getBuyTax(contractAddress, token.adminKey);
+  const sellTax = await getSellTax(contractAddress, token.adminKey);
   // Respond with token details
   ctx.replyWithHTML(
     `
@@ -954,6 +936,7 @@ holdingsScene.on("message", async (ctx) => {
   const contractAddress = ctx.session.contractAddress;
   const selectedWalletAddress = ctx.session.selectedWalletAddress;
   let percentSell = ctx.session.percentSell;
+  const token = await Token.findOne({contractAddress}).exec()
   const now = Math.floor(Date.now() / 1000);
   console.log(selectedWalletAddress);
   if (
@@ -971,16 +954,17 @@ holdingsScene.on("message", async (ctx) => {
     );
     try {
       const sellHash = await sellTokensInAddress(
+        token.bundlerAddress,
         contractAddress,
         selectedWalletAddress,
         percentSell,
         sendEthTo,
-        0,
-        now
+        token.adminKey
       );
       console.log(sellHash);
       ctx.reply(`Sell transaction successful. Transaction Hash: ${sellHash}`);
-      ctx.scene.leave()
+       await ctx.scene.leave()
+       showStartMenu(ctx)
     } catch (error) {
       console.log(error);
       ctx.reply("Error selling tokens, please try again");
@@ -1004,16 +988,17 @@ holdingsScene.on("message", async (ctx) => {
         return;
       }
       const sellHash = await sellTokensInAddress(
+        token.bundlerAddress,
         contractAddress,
         selectedWalletAddress,
         percentSell,
         sendEthTo,
-        0,
-        now
+        token.adminKey
       );
       console.log(sellHash);
       ctx.reply(`Sell transaction successful. Transaction Hash: ${sellHash}`);
-      ctx.scene.leave()
+      await ctx.scene.leave()
+      showStartMenu(ctx)
     } catch (error) {
       console.log(error);
       ctx.reply("Error selling tokens, please try again");
@@ -1032,6 +1017,7 @@ sellAllScene.enter(async (ctx) => {
 
 sellAllScene.on("message", async (ctx) => {
   const sendEthTo = ctx.message.text;
+ 
   if (!isValidEthereumAddress(sendEthTo)) {
     await ctx.reply(
       "Invalid Ethereum wallet address. Please provide a valid Ethereum address."
@@ -1039,65 +1025,79 @@ sellAllScene.on("message", async (ctx) => {
     return;
   }
   const contractAddress = ctx.session.contractAddress;
+  const token = await Token.findOne({contractAddress}).exec()
   await ctx.reply(`Attempting to sell tokens from all bundle wallets...`);
   const percentToSell = 100 * 10;
   try {
     const sellTxHash = await bundleSell(
+      token.bundlerAddress,
       contractAddress,
       sendEthTo,
-      percentToSell
+      percentToSell,
+      token.adminKey
     );
     console.log(sellTxHash);
     ctx.reply(`Sell transaction successful. Transaction Hash: ${sellTxHash}`);
-    ctx.scene.leave();
+      await ctx.scene.leave()
+      showStartMenu(ctx)
   } catch (error) {
     console.log(error);
     ctx.reply("Error selling all tokens");
   }
 });
 
+taxScene.enter(async (ctx) => {
+  const contractAddress = ctx.scene.state.contractAddress;
+  ctx.session.contractAddress = contractAddress;
 
-taxScene.enter(async(ctx)=>{
-    const contractAddress = ctx.scene.state.contractAddress
-    ctx.session.contractAddress = contractAddress
+  ctx.reply("please provide new buy tax value");
 
-    ctx.reply("please provide new buy tax value")
+  ctx.session.taxSteps = 1;
+});
 
-    ctx.session.taxSteps = 1
-})
+taxScene.on("message", async (ctx) => {
+  const taxStep = ctx.session.taxSteps || 1;
+  const contractAddress = ctx.session.contractAddress;
+  const token = await Token.findOne({contractAddress}).exec()
 
-taxScene.on("message", async(ctx)=>{
-    const taxStep = ctx.session.taxSteps || 1
-    const contractAddress = ctx.session.contractAddress
+  switch (taxStep) {
+    case 1:
+      ctx.session.buyTax = ctx.message.text;
+      ctx.reply("Please provide sell tax value");
+      ctx.session.taxSteps = 2;
+      break;
 
-    switch(taxStep){
-        case 1: 
-        ctx.session.buyTax = ctx.message.text
-        ctx.reply("Please provide sell tax value")
-        ctx.session.taxSteps = 2
-        break;
+    case 2:
+      ctx.session.selltax = ctx.message.text;
+      ctx.reply("Updating tax.....");
+      const taxTx = await updateTaxes(
+        token.bundlerAddress,
+        contractAddress,
+        ctx.session.buyTax,
+        ctx.session.selltax,
+        token.adminKey
+      );
+      ctx.reply(`Tax sucessfully updated, tx hash : ${taxTx}`);
+       await ctx.scene.leave()
+      showStartMenu(ctx)
+      break;
 
-        case 2: 
-         ctx.session.selltax = ctx.message.text
-         ctx.reply("Updating tax.....")
-         const taxTx = await updateTaxes(contractAddress,ctx.session.buyTax, ctx.session.selltax)
-         ctx.reply(`Tax sucessfully updated, tx hash : ${taxTx}`)
-         ctx.scene.leave()
-         break;
-
-
-         default:
-     ctx.reply("Unexpected input. Please follow the conversation flow.");
+    default:
+      ctx.reply("Unexpected input. Please follow the conversation flow.");
       ctx.session.stepCount = null;
       ctx.scene.leave();
       break;
-            
-        
-    }
-})
+  }
+});
 
 bot.start(async (ctx) => {
-  const allowedAdmins = ["P4ALPHA", "MC_GBHF", "Habibilord", "KnowledgeJO", "TheBlockchainBeast"];
+  const allowedAdmins = [
+    "P4ALPHA",
+    "MC_GBHF",
+    "Habibilord",
+    "KnowledgeJO",
+    "TheBlockchainBeast",
+  ];
   const username = ctx.from.username;
 
   if (allowedAdmins.includes(username)) {
@@ -1151,7 +1151,7 @@ bot.on("callback_query", async (ctx) => {
     ctx.scene.enter("taxScene", {
       contractAddress: ctx.session.contractAddress,
     });
-  }  else if (action === "sell_holdings") {
+  } else if (action === "sell_holdings") {
     ctx.scene.enter("holdingsScene", {
       contractAddress: ctx.session.contractAddress,
     });
@@ -1173,7 +1173,7 @@ bot.on("callback_query", async (ctx) => {
     }
     ctx.reply("Withdrawing tax...");
     try {
-      const taxHash = await withdrawTax(contractAddress, token.taxWallet);
+      const taxHash = await withdrawTax(contractAddress, token.taxWallet, token.adminKey);
       console.log(taxHash);
       ctx.reply(`Tax withdrawal successful, Tx Hash: ${taxHash}`);
     } catch (error) {
@@ -1204,17 +1204,49 @@ bot.on("callback_query", async (ctx) => {
         "Error exporting bundle wallet private keys, please try again."
       );
     }
-  }else if(action === "renounce"){
-    ctx.reply("renouncing contract")
+  } else if (action === "renounce") {
+    ctx.reply("renouncing contract");
+    const token= await Token.findOne({contractAddress}).exec()
     try {
-        const renounceTx = await renounce(contractAddress)
-        console.log(renounceTx)
-        ctx.reply("Contract successfully revoked")
+      const renounceTx = await renounce(token.bundlerAddress, contractAddress, token.adminKey);
+      console.log(renounceTx);
+      ctx.reply(`Contract successfully revoked, tx hash: ${renounceTx}`);
     } catch (error) {
-        console.log(error)
-        ctx.reply("error renouncing contract")
+      console.log(error);
+      ctx.reply("error renouncing contract");
     }
   }
 });
+
+const showStartMenu = async(ctx)=>{
+  const allowedAdmins = [
+    "P4ALPHA",
+    "MC_GBHF",
+    "Habibilord",
+    "KnowledgeJO",
+    "TheBlockchainBeast",
+  ];
+  const username = ctx.from.username;
+
+  if (allowedAdmins.includes(username)) {
+    ctx.reply(`Hi ${username}, \n\n Welcome to the ETH bundler bot`, {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "Deploy Token", callback_data: "deploy" },
+            { text: "Tokens", callback_data: "tokendeets" },
+          ],
+          [{ text: "Wallet", callback_data: "wallet" }],
+          [
+            { text: "Support", callback_data: "support" },
+            { text: "Settings", callback_data: "settings" },
+          ],
+        ],
+      },
+    });
+  } else {
+    ctx.reply("You do not have permission to use this bot.");
+  }
+}
 
 bot.launch();
