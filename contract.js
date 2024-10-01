@@ -2,12 +2,14 @@ const { ethers } = require("ethers");
 const bundlerABI = require("./ABIs/Bundler.json");
 require("dotenv").config();
 const TokenABI = require("./ABIs/Token.json");
+const TokenBytecode = require("./bytecode/Token.json");
 const { createNewBundler } = require("./bundler/bundlerFactory");
 
 const coAdmin = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 
 const alchemyEndpointKey = process.env.ALCHEMY_ENDPOINT_KEY || "";
-const providerUrl = `https://eth-mainnet.g.alchemy.com/v2/${alchemyEndpointKey}`;
+// const providerUrl = `https://eth-mainnet.g.alchemy.com/v2/${alchemyEndpointKey}`;
+const providerUrl = "http://127.0.0.1:8545";
 const provider = new ethers.providers.JsonRpcProvider(providerUrl);
 
 // const signer = new ethers.Wallet(privateKey, provider);
@@ -84,6 +86,38 @@ async function bundler(bundlerAddress) {
 
 let signer;
 
+async function createTkn(
+  bundlerAddress,
+  taxWalletAddress,
+  tokenName,
+  tokenSym,
+  totalSupply,
+  decimals,
+  signerObject
+) {
+  try {
+    const Token = new ethers.ContractFactory(
+      TokenABI,
+      TokenBytecode.bytecode,
+      signerObject
+    );
+    const token = await Token.deploy(
+      bundlerAddress,
+      taxWalletAddress,
+      tokenName,
+      tokenSym,
+      totalSupply,
+      decimals
+    );
+
+    await token.deployTransaction.wait();
+
+    return token.address;
+  } catch (error) {
+    console.log("Error from createTkn", error);
+  }
+}
+
 async function deployToken(
   tokenName,
   tokenSymbol,
@@ -99,22 +133,29 @@ async function deployToken(
     // Deploy new bundler and get its address
     const newBundlerAddress = await deployBundler();
     const bundlerContract = await bundler(newBundlerAddress);
-
-    // Proceed with token creation if gas is within limits
-    const tx = await bundlerContract.createNewToken(
-      signer.address,
+    const tokenAddress = await createTkn(
+      newBundlerAddress,
       taxWallet,
       tokenName,
       tokenSymbol,
       totalSupply,
-      tokenDecimals
+      tokenDecimals,
+      signer
     );
 
-    console.log("---------------------------------------");
-    console.log("Waiting for transaction confirmation...");
-    const receipt = await tx.wait(); // Wait for the transaction to be mined
+    // create token
+    let contractAddress;
+    let tx;
+    // Proceed with token creation if gas is within limits
+    if (tokenAddress) {
+      tx = await bundlerContract.createNewToken(tokenAddress);
+      console.log("---------------------------------------");
+      console.log("Waiting for transaction confirmation...");
+      await tx.wait(); // Wait for the transaction to be mined
 
-    const contractAddress = receipt.events[2].args[0]; // Get the created token contract from the emitted event
+      contractAddress = tokenAddress;
+    }
+
     if (contractAddress) {
       console.log("---------------------------------------");
       console.log("Token deployed successfully at:", contractAddress, {
@@ -356,12 +397,16 @@ function getTotalEthForTxs(listOfSwapTransactions) {
 //   "10026f4c6e063169eac3b48b34a118e1693a3c301da56540b5964ea8de3a5b34"
 // );
 async function ExamplePerimeterForTx() {
+  const privateKey =
+    "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+  signer = new ethers.Wallet(privateKey, provider);
   const resp = await deployToken(
     "TestToken",
     "TST",
     10000000,
     18,
-    "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+    "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    privateKey
   );
   const bundlerAddress = resp.newBundlerAddress;
   const bundlerContract = await bundler(bundlerAddress);
@@ -432,7 +477,8 @@ async function ExamplePerimeterForTx() {
     tokenAddress,
     swapTransactions[0].to,
     300,
-    signer.address
+    signer.address,
+    privateKey
   );
   const ethBalAfter = await provider.getBalance(signer.address);
   if (Number(ethBalAfter) > Number(ethBalBefore)) {
@@ -443,7 +489,13 @@ async function ExamplePerimeterForTx() {
   }
 
   // sell tokens in all addresses
-  await bundleSell(bundlerAddress, tokenAddress, signer.address, 1000);
+  await bundleSell(
+    bundlerAddress,
+    tokenAddress,
+    signer.address,
+    1000,
+    privateKey
+  );
   const ethBalNow = await provider.getBalance(signer.address);
   if (Number(ethBalNow) > Number(ethBalAfter)) {
     console.log("sold tokens in all addresses succesfully", {
@@ -465,7 +517,13 @@ async function ExamplePerimeterForTx() {
   //update taxes
   const newBuyTax = 10;
   const newSellTax = 15;
-  await updateTaxes(bundlerAddress, tokenAddress, newBuyTax, newSellTax);
+  await updateTaxes(
+    bundlerAddress,
+    tokenAddress,
+    newBuyTax,
+    newSellTax,
+    privateKey
+  );
   const newBuyT = await token.buyTax();
   const newSellT = await token.sellTax();
   console.log(`updated taxes: `, {

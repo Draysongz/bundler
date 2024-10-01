@@ -152,12 +152,7 @@
   },
   {
     "inputs": [
-      { "internalType": "address", "name": "_adminAddress", "type": "address" },
-      { "internalType": "address", "name": "taxWallet", "type": "address" },
-      { "internalType": "string", "name": "tokenName", "type": "string" },
-      { "internalType": "string", "name": "tokenSym", "type": "string" },
-      { "internalType": "uint256", "name": "totalSupply", "type": "uint256" },
-      { "internalType": "uint8", "name": "tokenDecimals", "type": "uint8" }
+      { "internalType": "address", "name": "tokenAddress", "type": "address" }
     ],
     "name": "createNewToken",
     "outputs": [],
