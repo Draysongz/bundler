@@ -8,8 +8,8 @@ const { createNewBundler } = require("./bundler/bundlerFactory");
 const coAdmin = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 
 const alchemyEndpointKey = process.env.ALCHEMY_ENDPOINT_KEY || "";
-// const providerUrl = `https://eth-mainnet.g.alchemy.com/v2/${alchemyEndpointKey}`;
-const providerUrl = "http://127.0.0.1:8545";
+const providerUrl = `https://eth-mainnet.g.alchemy.com/v2/${alchemyEndpointKey}`;
+// const providerUrl = "http://127.0.0.1:8545";
 const provider = new ethers.providers.JsonRpcProvider(providerUrl);
 
 // const signer = new ethers.Wallet(privateKey, provider);
@@ -398,7 +398,7 @@ function getTotalEthForTxs(listOfSwapTransactions) {
 // );
 async function ExamplePerimeterForTx() {
   const privateKey =
-    "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+    "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"; // hardhat mainnet fork private key - first account
   signer = new ethers.Wallet(privateKey, provider);
   const resp = await deployToken(
     "TestToken",
