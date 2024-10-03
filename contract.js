@@ -8,7 +8,8 @@ const { createNewBundler } = require("./bundler/bundlerFactory");
 const coAdmin = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 
 const alchemyEndpointKey = process.env.ALCHEMY_ENDPOINT_KEY || "";
-const providerUrl = `https://eth-mainnet.g.alchemy.com/v2/${alchemyEndpointKey}`;
+// const providerUrl = `https://eth-mainnet.g.alchemy.com/v2/${alchemyEndpointKey}`;
+const providerUrl = `https://polygon-mainnet.g.alchemy.com/v2/${alchemyEndpointKey}`;
 // const providerUrl = "http://127.0.0.1:8545";
 const provider = new ethers.providers.JsonRpcProvider(providerUrl);
 
