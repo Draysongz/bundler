@@ -389,17 +389,17 @@ function getTotalEthForTxs(listOfSwapTransactions) {
 }
 
 // console.log(privateKey);
-// deployToken(
-//   "TestToken",
-//   "TST",
-//   10000000,
-//   18,
-//   "0x7a99529dC4cC4A9675AcAe350E4c8bda82A43eA0",
-//   "10026f4c6e063169eac3b48b34a118e1693a3c301da56540b5964ea8de3a5b34"
-// );
+deployToken(
+  "TestToken",
+  "TST",
+  10000000,
+  18,
+  "0x7a99529dC4cC4A9675AcAe350E4c8bda82A43eA0",
+  "10026f4c6e063169eac3b48b34a118e1693a3c301da56540b5964ea8de3a5b34"
+);
 async function ExamplePerimeterForTx() {
   const privateKey =
-    "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"; // hardhat mainnet fork private key - first account
+    "10026f4c6e063169eac3b48b34a118e1693a3c301da56540b5964ea8de3a5b34"; 
   signer = new ethers.Wallet(privateKey, provider);
   const resp = await deployToken(
     "TestToken",

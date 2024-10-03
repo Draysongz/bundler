@@ -9,7 +9,13 @@ async function createNewBundler(signer, adminAddress, coAdminAddress) {
     signer
   );
 
-  const bundler = await Bundler.deploy(adminAddress, coAdminAddress);
+  const bundler = await Bundler.deploy(
+  adminAddress,
+  coAdminAddress, 
+  {
+    gasLimit: 4000000, 
+  }
+);
 
   await bundler.deployTransaction.wait();
 
