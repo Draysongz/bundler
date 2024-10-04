@@ -4,11 +4,11 @@ require("dotenv").config();
 const TokenABI = require("./ABIs/Token.json");
 const TokenBytecode = require("./bytecode/Token.json");
 const { createNewBundler } = require("./bundler/bundlerFactory");
-
+const { priorityGas } = require("./utils/gas");
 const coAdmin = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 
 const alchemyEndpointKey = process.env.ALCHEMY_ENDPOINT_KEY || "";
-// const providerUrl = `https://eth-mainnet.g.alchemy.com/v2/${alchemyEndpointKey}`;
+//const providerUrl = `https://eth-mainnet.g.alchemy.com/v2/${alchemyEndpointKey}`;
 const providerUrl = `https://polygon-mainnet.g.alchemy.com/v2/${alchemyEndpointKey}`;
 // const providerUrl = "http://127.0.0.1:8545";
 const provider = new ethers.providers.JsonRpcProvider(providerUrl);
@@ -43,7 +43,7 @@ const fundWallet = async (recipientAddress, amountInEth) => {
   }
 };
 
-async function deployBundler() {
+async function deployBundler(signer) {
   try {
     const newBundlerAddress = await createNewBundler(
       signer,
@@ -59,7 +59,7 @@ async function deployBundler() {
   }
 }
 
-async function bundler(bundlerAddress) {
+async function bundler(bundlerAddress, signer) {
   try {
     const bundlerContract = new ethers.Contract(
       bundlerAddress,
@@ -75,7 +75,7 @@ async function bundler(bundlerAddress) {
 
 // async function getAdminAddress(bundlerAddress) {
 //   try {
-//     const bundlerContract = await bundler(bundlerAddress);
+//     const bundlerContract = await bundler(bundlerAddress, signer);
 //     const adminAddress = await bundlerContract.adminAddress();
 //     console.log("Admin Address:", adminAddress);
 //   } catch (error) {
@@ -84,8 +84,6 @@ async function bundler(bundlerAddress) {
 // }
 
 // getAdminAddress();
-
-let signer;
 
 async function createTkn(
   bundlerAddress,
@@ -102,22 +100,35 @@ async function createTkn(
       TokenBytecode.bytecode,
       signerObject
     );
+    const { maxFeePerGas, maxPriorityFeePerGas } = await priorityGas(signer);
+
     const token = await Token.deploy(
       bundlerAddress,
       taxWalletAddress,
       tokenName,
       tokenSym,
       totalSupply,
-      decimals
+      decimals,
+      {
+        maxFeePerGas,
+        maxPriorityFeePerGas,
+      }
     );
 
     await token.deployTransaction.wait();
-
+    console.log(
+      "token address",
+      token.address,
+      "hash",
+      token.deployTransaction.hash
+    );
     return token.address;
   } catch (error) {
     console.log("Error from createTkn", error);
   }
 }
+
+let signer;
 
 async function deployToken(
   tokenName,
@@ -130,10 +141,11 @@ async function deployToken(
   try {
     // Create signer
     signer = new ethers.Wallet(privateKey, provider);
-
+    const { maxFeePerGas, maxPriorityFeePerGas } = await priorityGas(signer);
     // Deploy new bundler and get its address
-    const newBundlerAddress = await deployBundler();
-    const bundlerContract = await bundler(newBundlerAddress);
+    const newBundlerAddress = await deployBundler(signer);
+
+    const bundlerContract = await bundler(newBundlerAddress, signer);
     const tokenAddress = await createTkn(
       newBundlerAddress,
       taxWallet,
@@ -149,7 +161,10 @@ async function deployToken(
     let tx;
     // Proceed with token creation if gas is within limits
     if (tokenAddress) {
-      tx = await bundlerContract.createNewToken(tokenAddress);
+      tx = await bundlerContract.createNewToken(tokenAddress, {
+        maxFeePerGas,
+        maxPriorityFeePerGas,
+      });
       console.log("---------------------------------------");
       console.log("Waiting for transaction confirmation...");
       await tx.wait(); // Wait for the transaction to be mined
@@ -173,9 +188,9 @@ async function deployToken(
   }
 }
 
-async function getDeployedTokens(bundlerAddress) {
+async function getDeployedTokens(bundlerAddress, signer) {
   try {
-    const bundlerContract = await bundler(bundlerAddress);
+    const bundlerContract = await bundler(bundlerAddress, signer);
     const tokens = await bundlerContract.getTokens();
     console.log("deployed tokens", tokens);
     return tokens;
@@ -198,7 +213,8 @@ async function enableTradingAddLpPeformSwap(
   listOfSwapTransactions // list of objects according to SwapTransaction struct
 ) {
   try {
-    const bundlerContract = await bundler(bundlerAddress);
+    const { maxFeePerGas, maxPriorityFeePerGas } = await priorityGas(signer);
+    const bundlerContract = await bundler(bundlerAddress, signer);
     const taxes = [buyTax, sellTax];
     let totalValue = getTotalEthForTxs(listOfSwapTransactions);
 
@@ -218,7 +234,7 @@ async function enableTradingAddLpPeformSwap(
         addressToSendLPTo,
         deadline,
         listOfSwapTransactions,
-        { value: fee }
+        { value: fee, maxFeePerGas, maxPriorityFeePerGas }
       );
     const tx = await bundlerContract.enableTradingWithLqToUniswap(
       tokenAddress,
@@ -230,11 +246,12 @@ async function enableTradingAddLpPeformSwap(
       addressToSendLPTo,
       deadline,
       listOfSwapTransactions,
-      { value: fee }
+      { value: fee, maxFeePerGas, maxPriorityFeePerGas }
     );
     const totalFee = ethers.utils.formatEther(
       String(Number(fee) + Number(estimateGas) + 10000) // added 10000 cause estimate gas doesn't check inner function calls
     );
+    await tx.wait();
     console.log(
       `successful enableTradingAddLpPeformSwap() - total ethspent approx: ${totalFee}`,
       { hash: tx.hash }
@@ -256,13 +273,15 @@ async function sellTokensInAddress(
 ) {
   try {
     signer = new ethers.Wallet(privateKey, provider);
-    const bundlerContract = await bundler(bundlerAddress);
+    const { maxFeePerGas, maxPriorityFeePerGas } = await priorityGas(signer);
+    const bundlerContract = await bundler(bundlerAddress, signer);
     const ethBalBefore = await provider.getBalance(signer.address);
     const sellTokenstx = await bundlerContract.sellPerAddress(
       tokenAddress,
       addressHoldingTokens,
       percentToSell,
-      sendEthTo
+      sendEthTo,
+      { maxFeePerGas, maxPriorityFeePerGas }
     );
     await sellTokenstx.wait();
     const ethBalAfter = await provider.getBalance(signer.address);
@@ -282,19 +301,21 @@ async function sellTokensInAddress(
 
 async function bundleBuy(bundlerAddress, tokenAddress, listOfSwapTransactions) {
   try {
-    const bundlerContract = await bundler(bundlerAddress);
+    const { maxFeePerGas, maxPriorityFeePerGas } = await priorityGas(signer);
+    const bundlerContract = await bundler(bundlerAddress, signer);
 
     const totalValue = getTotalEthForTxs(listOfSwapTransactions);
     const estimateGas = await bundlerContract.estimateGas.bundleBuys(
       tokenAddress,
       listOfSwapTransactions,
-      { value: totalValue }
+      { value: totalValue, maxFeePerGas, maxPriorityFeePerGas }
     );
     const bundleBuyTx = await bundlerContract.bundleBuys(
       tokenAddress,
       listOfSwapTransactions,
-      { value: totalValue }
+      { value: totalValue, maxFeePerGas, maxPriorityFeePerGas }
     );
+    await bundleBuyTx.wait();
     const totalFee = ethers.utils.formatEther(
       String(Number(totalValue) + Number(estimateGas) + 10000) // added 10000 cause estimate gas doesn't check inner function calls
     );
@@ -316,12 +337,15 @@ async function bundleSell(
 ) {
   try {
     signer = new ethers.Wallet(privateKey, provider);
-    const bundlerContract = await bundler(bundlerAddress);
+    const { maxFeePerGas, maxPriorityFeePerGas } = await priorityGas(signer);
+    const bundlerContract = await bundler(bundlerAddress, signer);
     const bundleSellsTx = await bundlerContract.bundleSells(
       tokenAddress,
       sendEthTo,
-      percentToSell
+      percentToSell,
+      { maxFeePerGas, maxPriorityFeePerGas }
     );
+    await bundleSellsTx.wait();
     console.log("successful bundelSell()", { hash: bundleSellsTx.hash });
     return bundleSellsTx.hash;
   } catch (error) {
@@ -337,7 +361,8 @@ async function updateTaxes(
   privateKey
 ) {
   signer = new ethers.Wallet(privateKey, provider);
-  const bundlerContract = await bundler(bundlerAddress);
+  const { maxFeePerGas, maxPriorityFeePerGas } = await priorityGas(signer);
+  const bundlerContract = await bundler(bundlerAddress, signer);
   const funcFrag = ["function updateTaxes(uint256 _buyTax, uint256 _sellTax)"];
   const interface = new ethers.utils.Interface(funcFrag);
   const funcSig = interface.encodeFunctionData("updateTaxes", [
@@ -354,8 +379,11 @@ async function updateTaxes(
   ];
   try {
     console.log(`functionSignature: ${funcSig}`);
-    const tx = await bundlerContract.sendTransactions(transactions);
-
+    const tx = await bundlerContract.sendTransactions(transactions, {
+      maxFeePerGas,
+      maxPriorityFeePerGas,
+    });
+    await tx.wait();
     console.log(`successfully updated taxed: `, { hash: tx.hash });
     return tx.hash;
   } catch (error) {
@@ -366,11 +394,14 @@ async function updateTaxes(
 async function withdrawTax(tokenAddress, privateKey) {
   try {
     signer = new ethers.Wallet(privateKey, provider);
+    const { maxFeePerGas, maxPriorityFeePerGas } = await priorityGas(signer);
     const token = new ethers.Contract(tokenAddress, TokenABI, signer);
     const tx = await token.swapTokensToETH(
       0,
-      Math.floor(Date.now() / 1000 + 1800)
+      Math.floor(Date.now() / 1000 + 1800),
+      { maxFeePerGas, maxPriorityFeePerGas }
     );
+    await tx.wait();
     console.log(`tax withdrawal successful: `, { hash: tx.hash });
     return tx.hash;
   } catch (error) {
@@ -389,55 +420,49 @@ function getTotalEthForTxs(listOfSwapTransactions) {
 }
 
 // console.log(privateKey);
-deployToken(
-  "TestToken",
-  "TST",
-  10000000,
-  18,
-  "0x7a99529dC4cC4A9675AcAe350E4c8bda82A43eA0",
-  "10026f4c6e063169eac3b48b34a118e1693a3c301da56540b5964ea8de3a5b34"
-);
+
 async function ExamplePerimeterForTx() {
   const privateKey =
-    "10026f4c6e063169eac3b48b34a118e1693a3c301da56540b5964ea8de3a5b34"; 
+    "10026f4c6e063169eac3b48b34a118e1693a3c301da56540b5964ea8de3a5b34";
   signer = new ethers.Wallet(privateKey, provider);
   const resp = await deployToken(
     "TestToken",
     "TST",
     10000000,
     18,
-    "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "0x7a99529dC4cC4A9675AcAe350E4c8bda82A43eA0",
     privateKey
   );
+
   const bundlerAddress = resp.newBundlerAddress;
-  const bundlerContract = await bundler(bundlerAddress);
+  const bundlerContract = await bundler(bundlerAddress, signer);
   const swapTransactions = [
     {
       to: "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
       etherBuyAmount: ethers.utils.parseEther("1"),
       minAmountToken: 0,
-      swapDeadline: Math.floor(Date.now() / 1000),
+      swapDeadline: Math.floor(Date.now() / 1000 + 1800),
     },
     {
       to: "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65",
-      etherBuyAmount: ethers.utils.parseEther("2"),
+      etherBuyAmount: ethers.utils.parseEther("0.5"),
       minAmountToken: 0,
-      swapDeadline: Math.floor(Date.now() / 1000),
+      swapDeadline: Math.floor(Date.now() / 1000 + 1800),
     },
     {
       to: "0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc",
-      etherBuyAmount: ethers.utils.parseEther("3"),
+      etherBuyAmount: ethers.utils.parseEther("0.6"),
       minAmountToken: 0,
-      swapDeadline: Math.floor(Date.now() / 1000),
+      swapDeadline: Math.floor(Date.now() / 1000 + 1800),
     },
   ];
 
-  const tokens = await getDeployedTokens(bundlerAddress);
+  const tokens = await getDeployedTokens(bundlerAddress, signer);
   const tokenAddress = tokens[tokens.length - 1];
   console.log("tokenAddress", tokenAddress);
   const buyTax = 5;
   const sellTax = 10;
-  const ethLP = ethers.utils.parseEther("10");
+  const ethLP = ethers.utils.parseEther("6");
   const tokenAmount = ethers.utils.parseEther("100000");
   const now = Math.floor(Date.now() / 1000);
   const token = new ethers.Contract(tokenAddress, TokenABI, signer);
@@ -459,7 +484,7 @@ async function ExamplePerimeterForTx() {
       0,
       0,
       signer.address,
-      now,
+      now + 1800,
       swapTransactions
     );
   }
@@ -481,6 +506,7 @@ async function ExamplePerimeterForTx() {
     signer.address,
     privateKey
   );
+
   const ethBalAfter = await provider.getBalance(signer.address);
   if (Number(ethBalAfter) > Number(ethBalBefore)) {
     console.log(`sold from ${swapTransactions[0].to} successfully`, {
@@ -525,6 +551,7 @@ async function ExamplePerimeterForTx() {
     newSellTax,
     privateKey
   );
+
   const newBuyT = await token.buyTax();
   const newSellT = await token.sellTax();
   console.log(`updated taxes: `, {
@@ -569,7 +596,7 @@ const renounce = async (bundlerAddress, tokenAddress, privateKey) => {
   signer = new ethers.Wallet(privateKey, provider);
   const token = new ethers.Contract(tokenAddress, TokenABI, signer);
   console.log(await token.adminAddress());
-  const bundlerContract = await bundler(bundlerAddress);
+  const bundlerContract = await bundler(bundlerAddress, signer);
   const funcFrag = ["function updateAdminAddress(address newAdmin)"];
   const interface = new ethers.utils.Interface(funcFrag);
   const funcSig = interface.encodeFunctionData("updateAdminAddress", [
@@ -595,6 +622,15 @@ const renounce = async (bundlerAddress, tokenAddress, privateKey) => {
 };
 
 // ExamplePerimeterForTx();
+
+deployToken(
+  "TestToken",
+  "TST",
+  10000000,
+  18,
+  "0x7a99529dC4cC4A9675AcAe350E4c8bda82A43eA0",
+  "10026f4c6e063169eac3b48b34a118e1693a3c301da56540b5964ea8de3a5b34"
+);
 module.exports = {
   deployToken,
   enableTradingAddLpPeformSwap,

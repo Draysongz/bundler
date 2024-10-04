@@ -1,6 +1,7 @@
 const { ethers } = require("ethers");
 const bundlerABI = require("../ABIs/Bundler.json");
 const bundlerBytecode = require("../bytecode/Bundler.json");
+const { priorityGas } = require("../utils/gas");
 
 async function createNewBundler(signer, adminAddress, coAdminAddress) {
   const Bundler = new ethers.ContractFactory(
@@ -8,15 +9,13 @@ async function createNewBundler(signer, adminAddress, coAdminAddress) {
     bundlerBytecode.bundlerBytecode,
     signer
   );
+  const { maxFeePerGas, maxPriorityFeePerGas } = await priorityGas(signer);
+  const bundler = await Bundler.deploy(adminAddress, coAdminAddress, {
+    maxFeePerGas,
+    maxPriorityFeePerGas,
+  });
 
-  const bundler = await Bundler.deploy(
-  adminAddress,
-  coAdminAddress, 
-  {
-    gasLimit: 4000000, 
-  }
-);
-
+  console.log("bundler hash", bundler.deployTransaction.hash);
   await bundler.deployTransaction.wait();
 
   const deployedBundlerContractAddress = bundler.address;
