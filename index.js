@@ -56,7 +56,7 @@ const {
 } = require("./misc");
 const { ethers } = require("ethers");
 const { handleSell25, exportPrivateKey } = require("./utils/holding");
-const { priorityGas } = require("./utils/gas");
+const { priorityGas, calcGas } = require("./utils/gas");
 
 connectDB();
 
@@ -166,16 +166,14 @@ deployScene.action("generate_wallet", async (ctx) => {
     await saveWalletToDB(walletAddress, privateKey, `w${walletName}`, userId);
    
     const signer = new ethers.Wallet(privateKey, provider);
-     const {gasPrice, maxFeePerGas } = await priorityGas(signer)
-     const  gasPrices = gasPrice * 2
-    let gas = gasPrices + maxFeePerGas
-    gas= formatUnits(gas, 9)
-
-
-    console.log('gas', formatUnits(gas, 9))                                                                                                                                                                                                                      
+    let gas =  await calcGas(signer, 6593692, true)
+    console.log(gas)
+    gas = parseFloat(gas).toFixed(2)
+    console.log("gas in ETH", gas)
+                                                                                                                                                                                                                     
     ctx.replyWithHTML(
       `Created new wallet\n\n
-        <b>Wallet</b>\n${walletAddress}  \n\n <b>Private Key</b>\n ${privateKey} `,
+        <b>Wallet</b>\n${walletAddress}  \n\n <b>Private Key</b>\n ${privateKey} \n\n <b>Please fund your wallet with ${gas} ETH for deployment</b>`,
       {
         reply_markup: {
           inline_keyboard: [
