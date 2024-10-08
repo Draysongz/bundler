@@ -4,14 +4,14 @@ require("dotenv").config();
 const TokenABI = require("./ABIs/Token.json");
 const TokenBytecode = require("./bytecode/Token.json");
 const { createNewBundler } = require("./bundler/bundlerFactory");
-const { priorityGas } = require("./utils/gas");
+const { priorityGas, calcGas } = require("./utils/gas");
 const coAdmin = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 
 const alchemyEndpointKey = process.env.ALCHEMY_ENDPOINT_KEY || "";
 const providerUrl = `https://eth-mainnet.g.alchemy.com/v2/${alchemyEndpointKey}`;
 // const providerUrl = `https://polygon-mainnet.g.alchemy.com/v2/${alchemyEndpointKey}`;
 // const providerUrl = "http://127.0.0.1:8545";
- const provider = new ethers.providers.JsonRpcProvider(providerUrl);
+const provider = new ethers.providers.JsonRpcProvider(providerUrl);
 
 // const signer = new ethers.Wallet(privateKey, provider);
 
@@ -425,6 +425,7 @@ async function ExamplePerimeterForTx() {
   const privateKey =
     "10026f4c6e063169eac3b48b34a118e1693a3c301da56540b5964ea8de3a5b34";
   signer = new ethers.Wallet(privateKey, provider);
+
   const resp = await deployToken(
     "TestToken",
     "TST",
@@ -644,7 +645,7 @@ module.exports = {
   getTokenBalance,
   withdrawTax,
   renounce,
-  provider
+  provider,
 };
 
 // console.log(recipientAddress)

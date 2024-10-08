@@ -1,3 +1,5 @@
+const { ethers } = require("ethers");
+
 async function priorityGas(signer) {
   const feeData = await signer.getFeeData();
 
@@ -22,6 +24,24 @@ function operation(a, b, operator) {
   }
 }
 
+async function calcGas(signer, gasUnit, deployment = false) {
+  const { maxFeePerGas } = await priorityGas(signer);
+  let fee;
+  if (deployment) {
+    fee = maxFeePerGas * 2;
+  } else {
+    fee = maxFeePerGas;
+  }
+  const gasInGwei = ethers.utils.formatUnits(fee, "9");
+  const totalCost = gasInGwei * gasUnit;
+  let toWei = totalCost * (1 * 10 ** 18);
+  toWei = toWei / (1 * 10 ** 9);
+  const toEther = ethers.utils.formatUnits(BigInt(toWei), "18");
+
+  return toEther;
+}
+
 module.exports = {
   priorityGas,
+  calcGas,
 };
