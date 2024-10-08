@@ -8,10 +8,10 @@ const { priorityGas } = require("./utils/gas");
 const coAdmin = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
 
 const alchemyEndpointKey = process.env.ALCHEMY_ENDPOINT_KEY || "";
-//const providerUrl = `https://eth-mainnet.g.alchemy.com/v2/${alchemyEndpointKey}`;
-const providerUrl = `https://polygon-mainnet.g.alchemy.com/v2/${alchemyEndpointKey}`;
+const providerUrl = `https://eth-mainnet.g.alchemy.com/v2/${alchemyEndpointKey}`;
+// const providerUrl = `https://polygon-mainnet.g.alchemy.com/v2/${alchemyEndpointKey}`;
 // const providerUrl = "http://127.0.0.1:8545";
-const provider = new ethers.providers.JsonRpcProvider(providerUrl);
+ const provider = new ethers.providers.JsonRpcProvider(providerUrl);
 
 // const signer = new ethers.Wallet(privateKey, provider);
 
@@ -623,14 +623,14 @@ const renounce = async (bundlerAddress, tokenAddress, privateKey) => {
 
 // ExamplePerimeterForTx();
 
-deployToken(
-  "TestToken",
-  "TST",
-  10000000,
-  18,
-  "0x7a99529dC4cC4A9675AcAe350E4c8bda82A43eA0",
-  "10026f4c6e063169eac3b48b34a118e1693a3c301da56540b5964ea8de3a5b34"
-);
+// deployToken(
+//   "TestToken",
+//   "TST",
+//   10000000,
+//   18,
+//   "0x7a99529dC4cC4A9675AcAe350E4c8bda82A43eA0",
+//   "10026f4c6e063169eac3b48b34a118e1693a3c301da56540b5964ea8de3a5b34"
+// );
 module.exports = {
   deployToken,
   enableTradingAddLpPeformSwap,
@@ -644,6 +644,7 @@ module.exports = {
   getTokenBalance,
   withdrawTax,
   renounce,
+  provider
 };
 
 // console.log(recipientAddress)

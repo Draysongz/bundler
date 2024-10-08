@@ -36,6 +36,7 @@ const {
   withdrawTax,
   updateTaxes,
   renounce,
+  provider,
 } = require("./contract");
 const Token = require("./TokenModel");
 const {
@@ -47,7 +48,7 @@ const {
   handleBundleStep6,
   handleBundleStep7,
 } = require("./bundleSteps");
-const { parseEther } = require("ethers/lib/utils");
+const { parseEther, formatUnits } = require("ethers/lib/utils");
 const {
   calculatePriceForBundlePercent,
   floor,
@@ -55,6 +56,7 @@ const {
 } = require("./misc");
 const { ethers } = require("ethers");
 const { handleSell25, exportPrivateKey } = require("./utils/holding");
+const { priorityGas } = require("./utils/gas");
 
 connectDB();
 
@@ -162,6 +164,15 @@ deployScene.action("generate_wallet", async (ctx) => {
     const wallets = await fetchUserWallet(userId);
     const walletName = wallets.length + 1;
     await saveWalletToDB(walletAddress, privateKey, `w${walletName}`, userId);
+   
+    const signer = new ethers.Wallet(privateKey, provider);
+     const {gasPrice, maxFeePerGas } = await priorityGas(signer)
+     const  gasPrices = gasPrice * 2
+    let gas = gasPrices + maxFeePerGas
+    gas= formatUnits(gas, 9)
+
+
+    console.log('gas', formatUnits(gas, 9))                                                                                                                                                                                                                      
     ctx.replyWithHTML(
       `Created new wallet\n\n
         <b>Wallet</b>\n${walletAddress}  \n\n <b>Private Key</b>\n ${privateKey} `,
