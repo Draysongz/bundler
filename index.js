@@ -164,13 +164,13 @@ deployScene.action("generate_wallet", async (ctx) => {
     const wallets = await fetchUserWallet(userId);
     const walletName = wallets.length + 1;
     await saveWalletToDB(walletAddress, privateKey, `w${walletName}`, userId);
-   
+
     const signer = new ethers.Wallet(privateKey, provider);
-    let gas =  await calcGas(signer, 6593692, true)
-    console.log(gas)
-    gas = parseFloat(gas).toFixed(2)
-    console.log("gas in ETH", gas)
-                                                                                                                                                                                                                     
+    let gas = await calcGas(signer, 7000000);
+    console.log(gas);
+    gas = parseFloat(gas).toFixed(2);
+    console.log("gas in ETH", gas);
+
     ctx.replyWithHTML(
       `Created new wallet\n\n
         <b>Wallet</b>\n${walletAddress}  \n\n <b>Private Key</b>\n ${privateKey} \n\n <b>Please fund your wallet with ${gas} ETH for deployment</b>`,
@@ -243,9 +243,9 @@ AddWalletScene.on("message", async (ctx) => {
   }
 });
 tokenScene.enter(async (ctx) => {
-  const userId = ctx.from.id
+  const userId = ctx.from.id;
   try {
-    const deployedTokens = await Token.find({userId}).exec();
+    const deployedTokens = await Token.find({ userId }).exec();
 
     if (deployedTokens.length === 0) {
       // No tokens found
@@ -577,7 +577,7 @@ deployScene.action("deploy_token", async (ctx) => {
       tokenDecimal: tokenDecimals,
       taxWallet: taxWallet,
       bundlerAddress: token.newBundlerAddress,
-      adminKey: privateKey
+      adminKey: privateKey,
     });
     ctx.session.tokenContractAddress = token.contractAddress;
     ctx.session.bundlerAddress = token.newBundlerAddress;
@@ -778,7 +778,7 @@ simultaneousScene.on("message", async (ctx) => {
   let simultaneousStep = ctx.session.simultaneousStep || 1;
   const contractAddress = ctx.session.contractAddress;
   let percentSell = ctx.session.percentSell;
-  const token = await Token.findOne({contractAddress}).exec()
+  const token = await Token.findOne({ contractAddress }).exec();
 
   if (
     percentSell == 25 ||
@@ -792,11 +792,17 @@ simultaneousScene.on("message", async (ctx) => {
     );
     try {
       percentSell = percentSell * 10;
-      const simHash = await bundleSell(token.bundlerAddress,contractAddress, sendEthTo, percentSell, token.adminKey);
+      const simHash = await bundleSell(
+        token.bundlerAddress,
+        contractAddress,
+        sendEthTo,
+        percentSell,
+        token.adminKey
+      );
       console.log(simHash);
       ctx.reply(`Sell transaction successful. Transaction Hash: ${simHash}`);
-      await ctx.scene.leave()
-      showStartMenu(ctx)
+      await ctx.scene.leave();
+      showStartMenu(ctx);
     } catch (error) {
       console.log(error);
       ctx.reply("Error selling tokens, please try again");
@@ -841,8 +847,8 @@ simultaneousScene.on("message", async (ctx) => {
             `Sell transaction successful. Transaction Hash: <code>${simHash}</code>`,
             { parse_mode: "HTML" }
           );
-           await ctx.scene.leave()
-          showStartMenu(ctx)
+          await ctx.scene.leave();
+          showStartMenu(ctx);
         } catch (error) {
           // Handle any errors in the selling process
           console.error("Error during simultaneous sell:", error);
@@ -945,7 +951,7 @@ holdingsScene.on("message", async (ctx) => {
   const contractAddress = ctx.session.contractAddress;
   const selectedWalletAddress = ctx.session.selectedWalletAddress;
   let percentSell = ctx.session.percentSell;
-  const token = await Token.findOne({contractAddress}).exec()
+  const token = await Token.findOne({ contractAddress }).exec();
   const now = Math.floor(Date.now() / 1000);
   console.log(selectedWalletAddress);
   if (
@@ -972,8 +978,8 @@ holdingsScene.on("message", async (ctx) => {
       );
       console.log(sellHash);
       ctx.reply(`Sell transaction successful. Transaction Hash: ${sellHash}`);
-       await ctx.scene.leave()
-       showStartMenu(ctx)
+      await ctx.scene.leave();
+      showStartMenu(ctx);
     } catch (error) {
       console.log(error);
       ctx.reply("Error selling tokens, please try again");
@@ -1006,8 +1012,8 @@ holdingsScene.on("message", async (ctx) => {
       );
       console.log(sellHash);
       ctx.reply(`Sell transaction successful. Transaction Hash: ${sellHash}`);
-      await ctx.scene.leave()
-      showStartMenu(ctx)
+      await ctx.scene.leave();
+      showStartMenu(ctx);
     } catch (error) {
       console.log(error);
       ctx.reply("Error selling tokens, please try again");
@@ -1026,7 +1032,7 @@ sellAllScene.enter(async (ctx) => {
 
 sellAllScene.on("message", async (ctx) => {
   const sendEthTo = ctx.message.text;
- 
+
   if (!isValidEthereumAddress(sendEthTo)) {
     await ctx.reply(
       "Invalid Ethereum wallet address. Please provide a valid Ethereum address."
@@ -1034,7 +1040,7 @@ sellAllScene.on("message", async (ctx) => {
     return;
   }
   const contractAddress = ctx.session.contractAddress;
-  const token = await Token.findOne({contractAddress}).exec()
+  const token = await Token.findOne({ contractAddress }).exec();
   await ctx.reply(`Attempting to sell tokens from all bundle wallets...`);
   const percentToSell = 100 * 10;
   try {
@@ -1047,8 +1053,8 @@ sellAllScene.on("message", async (ctx) => {
     );
     console.log(sellTxHash);
     ctx.reply(`Sell transaction successful. Transaction Hash: ${sellTxHash}`);
-      await ctx.scene.leave()
-      showStartMenu(ctx)
+    await ctx.scene.leave();
+    showStartMenu(ctx);
   } catch (error) {
     console.log(error);
     ctx.reply("Error selling all tokens");
@@ -1067,7 +1073,7 @@ taxScene.enter(async (ctx) => {
 taxScene.on("message", async (ctx) => {
   const taxStep = ctx.session.taxSteps || 1;
   const contractAddress = ctx.session.contractAddress;
-  const token = await Token.findOne({contractAddress}).exec()
+  const token = await Token.findOne({ contractAddress }).exec();
 
   switch (taxStep) {
     case 1:
@@ -1087,8 +1093,8 @@ taxScene.on("message", async (ctx) => {
         token.adminKey
       );
       ctx.reply(`Tax sucessfully updated, tx hash : ${taxTx}`);
-       await ctx.scene.leave()
-      showStartMenu(ctx)
+      await ctx.scene.leave();
+      showStartMenu(ctx);
       break;
 
     default:
@@ -1182,7 +1188,11 @@ bot.on("callback_query", async (ctx) => {
     }
     ctx.reply("Withdrawing tax...");
     try {
-      const taxHash = await withdrawTax(contractAddress, token.taxWallet, token.adminKey);
+      const taxHash = await withdrawTax(
+        contractAddress,
+        token.taxWallet,
+        token.adminKey
+      );
       console.log(taxHash);
       ctx.reply(`Tax withdrawal successful, Tx Hash: ${taxHash}`);
     } catch (error) {
@@ -1215,9 +1225,13 @@ bot.on("callback_query", async (ctx) => {
     }
   } else if (action === "renounce") {
     ctx.reply("renouncing contract");
-    const token= await Token.findOne({contractAddress}).exec()
+    const token = await Token.findOne({ contractAddress }).exec();
     try {
-      const renounceTx = await renounce(token.bundlerAddress, contractAddress, token.adminKey);
+      const renounceTx = await renounce(
+        token.bundlerAddress,
+        contractAddress,
+        token.adminKey
+      );
       console.log(renounceTx);
       ctx.reply(`Contract successfully revoked, tx hash: ${renounceTx}`);
     } catch (error) {
@@ -1227,7 +1241,7 @@ bot.on("callback_query", async (ctx) => {
   }
 });
 
-const showStartMenu = async(ctx)=>{
+const showStartMenu = async (ctx) => {
   const allowedAdmins = [
     "P4ALPHA",
     "MC_GBHF",
@@ -1256,6 +1270,6 @@ const showStartMenu = async(ctx)=>{
   } else {
     ctx.reply("You do not have permission to use this bot.");
   }
-}
+};
 
 bot.launch();

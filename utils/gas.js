@@ -6,11 +6,7 @@ async function priorityGas(signer) {
   const gasPrice = Number(feeData.gasPrice);
   const maxFeePerGas = Number(feeData.maxFeePerGas) + gasPrice;
   const maxPriorityFeePerGas = Number(feeData.maxPriorityFeePerGas) + gasPrice;
-  console.log({
-    maxFeePerGas: Number(feeData.maxFeePerGas),
-    maxPriorityFeePerGas: Number(feeData.maxPriorityFeePerGas),
-    gasPrice,
-  });
+
   return { maxFeePerGas, maxPriorityFeePerGas, gasPrice };
 }
 
@@ -24,15 +20,9 @@ function operation(a, b, operator) {
   }
 }
 
-async function calcGas(signer, gasUnit, deployment = false) {
+async function calcGas(signer, gasUnit) {
   const { maxFeePerGas } = await priorityGas(signer);
-  let fee;
-  if (deployment) {
-    fee = maxFeePerGas * 2;
-  } else {
-    fee = maxFeePerGas;
-  }
-  const gasInGwei = ethers.utils.formatUnits(fee, "9");
+  const gasInGwei = ethers.utils.formatUnits(maxFeePerGas, "9");
   const totalCost = gasInGwei * gasUnit;
   let toWei = totalCost * (1 * 10 ** 18);
   toWei = toWei / (1 * 10 ** 9);
